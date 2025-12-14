@@ -99,77 +99,130 @@ jobs:
           email_sent: false
         run: |
           set -euo pipefail
+
+          # ------------------------------------------------------------
+          # 1) Sent-email log file: tracks which usernames we've already emailed
+          #    so we do not send duplicates on future runs.
+          # ------------------------------------------------------------
           SENT_FILE="sent_emails.json"
-          
-          # Ensure sent log exists
+
+          # Create the log if it doesn't exist yet
           if [ ! -f "$SENT_FILE" ]; then
             echo "{}" > "$SENT_FILE"
           fi
-          sent=$(cat "$SENT_FILE")
+
+          # Load current sent state into a variable
+          sent="$(cat "$SENT_FILE")"
 
           echo "Current sent email log:"
           echo "$sent" | jq .
 
+          # ------------------------------------------------------------
+          # 2) Confirm we received the emails map from Terraform outputs
+          #    EMAILS_JSON should look like: {"vol-a":"a@x.com","vol-b":"b@x.com"}
+          # ------------------------------------------------------------
           echo "EMAILS_JSON received:"
           echo "$EMAILS_JSON" | jq .
 
-          #Old Above Below ------
-          # echo "$EMAILS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
-          # echo "Sending email to $email for user $username"
-          # Old Code Above -------
+          # ------------------------------------------------------------
+          # 3) Loop through each (username, email) pair and only send for NEW users
+          #    Use process substitution to avoid subshell issues from pipes.
+          # ------------------------------------------------------------
+          while read -r username email; do
+            # Skip empty lines (safety)
+            if [ -z "${username:-}" ] || [ -z "${email:-}" ]; then
+              continue
+            fi
 
-          echo "$EMAILS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read -r username email; do
-            already_sent=$(echo "$sent" | jq -r --arg u "$username" 'has($u)')
+            # Check if we've already emailed this username
+            already_sent="$(echo "$sent" | jq -r --arg u "$username" 'has($u)')"
 
             if [ "$already_sent" = "true" ]; then
               echo "Skipping $username ($email) — already emailed"
               continue
             fi
 
-          echo "Sending email to $email for user $username"
-          cat > ses-message.json <<EOF
-          {
-            "Subject": { "Data": "Your IAM access has been configured" },
-            "Body": {
-              "Text": {
-                "Data": "Hello,\n\nYour IAM user \"${username}\" has been created or updated in AWS.\n\nIf you were expecting new access, you should now be able to sign in or use your credentials (delivered to you through our normal secure channel).\n\nIf you did not expect this change, please contact the admin team immediately."
+            echo "Sending email to $email for user $username"
+
+            # ------------------------------------------------------------
+            # 4) Build SES message payload as JSON file to avoid CLI quoting issues
+            # ------------------------------------------------------------
+            cat > ses-message.json <<EOF
+            {
+              "Subject": { "Data": "Your IAM access has been configured" },
+              "Body": {
+                "Text": {
+                  "Data": "Hello,\n\nYour IAM user \"${username}\" has been created or updated in AWS.\n\nIf you were expecting new access, you should now be able to sign in or use your credentials (delivered to you through our normal secure channel).\n\nIf you did not expect this change, please contact the admin team immediately."
+                }
               }
             }
-          }
-          EOF
+            EOF
 
-          aws ses send-email \
+            # (Optional) Validate the JSON payload in logs
+            echo "SES payload:"
+            cat ses-message.json | jq .
+
+            # ------------------------------------------------------------
+            # 5) Send email via SES
+            # ------------------------------------------------------------
+            aws ses send-email \
               --region "$AWS_REGION" \
               --from "$SES_FROM_ADDRESS" \
               --destination "ToAddresses=$email" \
               --message file://ses-message.json
 
-          #Record successful send
-          now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          sent=$(echo "$sent" | jq --arg u "$username" --arg t "$now" '. + {($u): $t}')
-          echo "$sent" > "$SENT_FILE"
-          email_sent=true
-          echo "$email_sent"
-          done
+            # ------------------------------------------------------------
+            # 6) Record successful send in sent_emails.json (in-memory + on-disk)
+            # ------------------------------------------------------------
+            now="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            sent="$(echo "$sent" | jq --arg u "$username" --arg t "$now" '. + {($u): $t}')"
+            echo "$sent" > "$SENT_FILE"
+
+            echo "Recorded send for $username at $now"
+          done < <(echo "$EMAILS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"')
+
+          # ------------------------------------------------------------
+          # 7) Final debug: show updated sent log so you can confirm it changed
+          # ------------------------------------------------------------
+          echo "Updated sent email log (file):"
+          cat "$SENT_FILE" | jq .
+            email_sent=true
+            echo "email_sent=true" >> "$GITHUB_OUTPUT"
+
+            done
       - name: Commit sent email log
         #if: steps.email_sent_id.outputs.email_sent == 'true'
         working-directory: terraform/iam-users
         env: 
           email_sent_ses: ${{ steps.email_sent_id.outputs.email_sent }}
         run: |
-          set -e
-          pwd
-          echo "$email_sent_ses"
+          set -euo pipefail
+
+          # ------------------------------------------------------------
+          # 1) Identify this commit as coming from GitHub Actions
+          # ------------------------------------------------------------
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # ------------------------------------------------------------
+          # 2) Stage the sent email log (this is the only file we care about)
+          # ------------------------------------------------------------
           git add sent_emails.json
 
+          # ------------------------------------------------------------
+          # 3) If the staged file has NOT changed, exit cleanly
+          #    This prevents empty commits when:
+          #      - no emails were sent
+          #      - users were removed
+          #      - apply was a no-op
+          # ------------------------------------------------------------
           if git diff --cached --quiet; then
-            echo "No new emails sent. Nothing to commit."
-          elif
-            git commit -m "chore: record sent SES emails"
-            git push
-          else  
-            echo "No message"
+            echo "sent_emails.json unchanged. Nothing to commit."
+            exit 0
           fi
+
+          # ------------------------------------------------------------
+          # 4) Commit and push the updated sent email log
+          # ------------------------------------------------------------
+          git commit -m "chore: record sent SES emails"
+          git push
