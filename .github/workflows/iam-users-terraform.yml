@@ -61,7 +61,7 @@ jobs:
         id: tf_outputs
         working-directory: terraform/iam-users
         run: |
-          terraform output -json user_emails
+          set -euo pipefail
           emails_json=$(terraform output -json user_emails)
           echo "emails_json=$emails_json" >> "$GITHUB_OUTPUT"
 
@@ -69,8 +69,14 @@ jobs:
       - name: Send SES emails to users
         if: github.event_name != 'pull_request' || github.event.inputs.send_emails == 'yes'
         env:
-          SES_FROM_ADDRESS: "info@cloudnestadvisory.com"  # change this
+          SES_FROM_ADDRESS: "info@cloudnestadvisory.com"
+          EMAILS_JSON: ${{ steps.tf_outputs.outputs.emails_json }}
         run: |
+          set -euo pipefail
+
+          echo "EMAILS_JSON received:"
+          echo "$EMAILS_JSON" | jq .
+          
           echo "$emails_json" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
           echo "Sending email to $email for user $username"
 
