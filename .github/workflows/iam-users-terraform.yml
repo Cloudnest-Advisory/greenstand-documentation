@@ -2,6 +2,13 @@ name: IAM Users – Terraform
 
 on:
   workflow_dispatch: {}
+    inputs:
+      send_emails:
+        description: "Send SES emails after apply?"
+        required: true
+        type: choice
+        options: ["no", "yes"]
+
   pull_request:
     paths:
       - 'terraform/iam-users/**'
@@ -58,24 +65,28 @@ jobs:
 
         # Send an email via SES to each user
       - name: Send SES emails to users
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.event.inputs.send_emails == 'yes'
         env:
           SES_FROM_ADDRESS: "info@cloudnestadvisory.com"  # change this
         run: |
-          emails_json='${{ steps.tf_outputs.outputs.emails_json }}'
-
           echo "$emails_json" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
             echo "Sending email to $email for user $username"
 
+            cat > ses-message.json <<EOF
+          {
+            "Subject": { "Data": "Your IAM access has been configured" },
+            "Body": {
+              "Text": {
+                "Data": "Hello,\n\nYour IAM user \"${username}\" has been created or updated in AWS.\n\nIf you were expecting new access, you should now be able to sign in or use your credentials (delivered to you through our normal secure channel).\n\nIf you did not expect this change, please contact the admin team immediately."
+              }
+            }
+          }
+          EOF
+
             aws ses send-email \
-              --region $AWS_REGION \
+              --region "$AWS_REGION" \
               --from "$SES_FROM_ADDRESS" \
               --destination "ToAddresses=$email" \
-              --message "Subject={Data=Your IAM access has been configured},Body={Text={Data=Hello,
+              --message file://ses-message.json
+          done
 
-                Your IAM user \"${username}\" has been created or updated in AWS.
-
-                If you were expecting new access, you should now be able to sign in or use your credentials (delivered to you through our normal secure channel).
-
-                If you did not expect this change, please contact the admin team immediately.}}"
-                          done

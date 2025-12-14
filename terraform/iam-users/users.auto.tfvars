@@ -1,8 +1,8 @@
 users = {
-  "vol-dmoney" = {
-    email            = "darrell@example.org"
-    permission_level = "ReadOnly"
-  }
+  # "vol-dmoney" = {
+  #   email            = "darrell@example.org"
+  #   permission_level = "ReadOnly"
+  # }
 
   "vol-test" = {
     email            = "dtshack@gmail.com"
