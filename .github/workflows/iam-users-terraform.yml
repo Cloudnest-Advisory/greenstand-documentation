@@ -186,10 +186,10 @@ jobs:
           # ------------------------------------------------------------
           echo "Updated sent email log (file):"
           cat "$SENT_FILE" | jq .
-            email_sent=true
-            echo "email_sent=true" >> "$GITHUB_OUTPUT"
 
-            done
+          email_sent=true
+          echo "email_sent=true" >> "$GITHUB_OUTPUT"
+
       - name: Commit sent email log
         #if: steps.email_sent_id.outputs.email_sent == 'true'
         working-directory: terraform/iam-users
