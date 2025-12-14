@@ -148,7 +148,7 @@ jobs:
           now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           sent=$(echo "$sent" | jq --arg u "$username" --arg t "$now" '. + {($u): $t}')
           echo "$sent" > "$SENT_FILE"
-          email_sent = true
+          email_sent=true
           echo "$email_sent"
           done
       - name: Commit sent email log
