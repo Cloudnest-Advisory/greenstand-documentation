@@ -128,7 +128,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.send_emails == 'true'
         working-directory: terraform/iam-users
         permissions:
-        contents: write
+          contents: write
         run: |
           set -e
 
