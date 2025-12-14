@@ -1,15 +1,15 @@
 name: IAM Users – Terraform
 
 on:
-  workflow_dispatch: 
-    inputs:
-      send_emails:
-        description: "Send SES emails after apply?"
-        required: true
-        type: choice
-        options:
-          - no  
-          - yes
+  workflow_dispatch: {}
+    # inputs:
+    #   send_emails:
+    #     description: "Send SES emails after apply?"
+    #     required: true
+    #     type: choice
+    #     options:
+    #       - no  
+    #       - yes
 
   pull_request:
     paths:
