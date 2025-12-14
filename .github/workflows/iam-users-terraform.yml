@@ -169,4 +169,6 @@ jobs:
           elif
             git commit -m "chore: record sent SES emails"
             git push
+          else  
+            echo "No message"
           fi
