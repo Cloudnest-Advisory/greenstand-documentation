@@ -90,7 +90,7 @@ jobs:
 
         # Send an email via SES to each user
       - name: Send SES emails to users
-        if: github.event_name != 'pull_request' || steps.plan_guard.outputs.has_creates == 'true'
+        if: github.event_name != 'pull_request' || steps.plan_guard.outputs.has_user_creates == 'true'
         working-directory: terraform/iam-users
         env:
           SES_FROM_ADDRESS: "info@cloudnestadvisory.com"
@@ -148,7 +148,7 @@ jobs:
           echo "$sent" > "$SENT_FILE"
           done
       - name: Commit sent email log
-        if: github.event_name == 'workflow_dispatch' && steps.plan_guard.outputs.has_creates == 'true'
+        if: github.event_name == 'workflow_dispatch' && steps.plan_guard.outputs.has_user_creates == 'true'
         working-directory: terraform/iam-users
         run: |
           set -e
