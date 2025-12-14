@@ -181,7 +181,7 @@ jobs:
           # ------------------------------------------------------------
           echo "Updated sent email log (file):"
           cat "$SENT_FILE" | jq .
-          
+
           email_sent=true
           echo "email_sent=true" >> "$GITHUB_OUTPUT"
 
@@ -192,19 +192,33 @@ jobs:
         env: 
           email_sent_ses: ${{ steps.email_sent_id.outputs.email_sent }}
         run: |
-          set -e
-          pwd
-          echo "$email_sent_ses"
+          set -euo pipefail
+
+          # ------------------------------------------------------------
+          # 1) Identify this commit as coming from GitHub Actions
+          # ------------------------------------------------------------
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # ------------------------------------------------------------
+          # 2) Stage the sent email log (this is the only file we care about)
+          # ------------------------------------------------------------
           git add sent_emails.json
 
+          # ------------------------------------------------------------
+          # 3) If the staged file has NOT changed, exit cleanly
+          #    This prevents empty commits when:
+          #      - no emails were sent
+          #      - users were removed
+          #      - apply was a no-op
+          # ------------------------------------------------------------
           if git diff --cached --quiet; then
-            echo "No new emails sent. Nothing to commit."
-          elif
-            git commit -m "chore: record sent SES emails"
-            git push
-          else  
-            echo "No message"
+            echo "sent_emails.json unchanged. Nothing to commit."
+            exit 0
           fi
+
+          # ------------------------------------------------------------
+          # 4) Commit and push the updated sent email log
+          # ------------------------------------------------------------
+          git commit -m "chore: record sent SES emails"
+          git push
