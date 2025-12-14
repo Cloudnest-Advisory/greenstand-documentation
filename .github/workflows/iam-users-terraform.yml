@@ -91,10 +91,12 @@ jobs:
         # Send an email via SES to each user
       - name: Send SES emails to users
         if: github.event_name != 'pull_request' || steps.plan_guard.outputs.has_user_creates == 'true'
+        id: email_sent_id
         working-directory: terraform/iam-users
         env:
           SES_FROM_ADDRESS: "info@cloudnestadvisory.com"
           EMAILS_JSON: ${{ steps.tf_outputs.outputs.emails_json }}
+          email_sent: false
         run: |
           set -euo pipefail
           SENT_FILE="sent_emails.json"
@@ -146,13 +148,17 @@ jobs:
           now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           sent=$(echo "$sent" | jq --arg u "$username" --arg t "$now" '. + {($u): $t}')
           echo "$sent" > "$SENT_FILE"
+          email_sent = true
+          echo "$email_sent"
           done
       - name: Commit sent email log
-        if: github.event_name == 'workflow_dispatch' #&& steps.plan_guard.outputs.has_user_creates == 'true'
+        if: steps.email_sent_id.outputs.email_sent == 'true'
         working-directory: terraform/iam-users
+        env: 
+          email_sent_ses: ${{ steps.email_sent_id.outputs.email_sent }}
         run: |
           set -e
-
+          pwd
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
