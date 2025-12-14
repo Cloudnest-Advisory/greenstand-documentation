@@ -74,8 +74,8 @@ jobs:
           ' tfplan.json)
 
 
-          echo "has_creates=$has_creates" >> "$GITHUB_OUTPUT"
-          echo "Plan has creates? $has_creates"
+          echo "has_user_creates=$has_user_creates" >> "$GITHUB_OUTPUT"
+          echo "Plan has creates? $has_user_creates"
 
             # Get user_emails output AFTER apply
 
