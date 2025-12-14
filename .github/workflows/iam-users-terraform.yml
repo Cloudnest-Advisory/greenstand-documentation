@@ -73,13 +73,34 @@ jobs:
           EMAILS_JSON: ${{ steps.tf_outputs.outputs.emails_json }}
         run: |
           set -euo pipefail
+          SENT_FILE="sent_emails.json"
+          
+          # Ensure sent log exists
+          if [ ! -f "$SENT_FILE" ]; then
+            echo "{}" > "$SENT_FILE"
+          fi
+          sent=$(cat "$SENT_FILE")
+
+          echo "Current sent email log:"
+          echo "$sent" | jq .
 
           echo "EMAILS_JSON received:"
           echo "$EMAILS_JSON" | jq .
-          
-          echo "$EMAILS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
-          echo "Sending email to $email for user $username"
 
+          #Old Above Below ------
+          # echo "$EMAILS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
+          # echo "Sending email to $email for user $username"
+          # Old Code Above -------
+
+          echo "$EMAILS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read -r username email; do
+            already_sent=$(echo "$sent" | jq -r --arg u "$username" 'has($u)')
+
+            if [ "$already_sent" = "true" ]; then
+              echo "Skipping $username ($email) — already emailed"
+              continue
+            fi
+
+          echo "Sending email to $email for user $username"
           cat > ses-message.json <<EOF
           {
             "Subject": { "Data": "Your IAM access has been configured" },
@@ -90,12 +111,16 @@ jobs:
             }
           }
           EOF
-          cat ses-message.json
 
           aws ses send-email \
               --region "$AWS_REGION" \
               --from "$SES_FROM_ADDRESS" \
               --destination "ToAddresses=$email" \
               --message file://ses-message.json
+              
+          #Record successful send
+          now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          sent=$(echo "$sent" | jq --arg u "$username" --arg t "$now" '. + {($u): $t}')
+          echo "$sent" > "$SENT_FILE"
           done
 
