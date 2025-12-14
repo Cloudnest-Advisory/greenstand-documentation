@@ -52,6 +52,7 @@ jobs:
         id: tf_outputs
         working-directory: terraform/iam-users
         run: |
+          terraform output -json user_emails
           emails_json=$(terraform output -json user_emails)
           echo "emails_json=$emails_json" >> "$GITHUB_OUTPUT"
 
