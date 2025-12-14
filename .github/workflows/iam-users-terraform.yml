@@ -77,7 +77,7 @@ jobs:
           echo "EMAILS_JSON received:"
           echo "$EMAILS_JSON" | jq .
           
-          echo "$emails_json" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
+          echo "$EMAILS_JSON" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
           echo "Sending email to $email for user $username"
 
           cat > ses-message.json <<EOF
