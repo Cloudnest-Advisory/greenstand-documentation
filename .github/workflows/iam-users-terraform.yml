@@ -45,3 +45,36 @@ jobs:
         if: github.event_name != 'pull_request'
         working-directory: terraform/iam-users
         run: terraform apply -auto-approve tfplan
+
+      # Get user_emails output AFTER apply
+      - name: Get user emails from Terraform outputs
+        if: github.event_name != 'pull_request'
+        id: tf_outputs
+        working-directory: terraform/iam-users
+        run: |
+          emails_json=$(terraform output -json user_emails)
+          echo "emails_json=$emails_json" >> "$GITHUB_OUTPUT"
+
+        # Send an email via SES to each user
+      - name: Send SES emails to users
+        if: github.event_name != 'pull_request'
+        env:
+          SES_FROM_ADDRESS: "info@cloudnestadvisory.com"  # change this
+        run: |
+          emails_json='${{ steps.tf_outputs.outputs.emails_json }}'
+
+          echo "$emails_json" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
+            echo "Sending email to $email for user $username"
+
+            aws ses send-email \
+              --region $AWS_REGION \
+              --from "$SES_FROM_ADDRESS" \
+              --destination "ToAddresses=$email" \
+              --message "Subject={Data=Your IAM access has been configured},Body={Text={Data=Hello,
+
+                Your IAM user \"${username}\" has been created or updated in AWS.
+
+                If you were expecting new access, you should now be able to sign in or use your credentials (delivered to you through our normal secure channel).
+
+                If you did not expect this change, please contact the admin team immediately.}}"
+                          done
