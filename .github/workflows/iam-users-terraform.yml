@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write      # needed for OIDC
-      contents: read
+      contents: write
 
     env:
       AWS_REGION: us-east-1
@@ -117,10 +117,27 @@ jobs:
               --from "$SES_FROM_ADDRESS" \
               --destination "ToAddresses=$email" \
               --message file://ses-message.json
-              
+
           #Record successful send
           now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           sent=$(echo "$sent" | jq --arg u "$username" --arg t "$now" '. + {($u): $t}')
           echo "$sent" > "$SENT_FILE"
           done
+      - name: Commit sent email log
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.send_emails == 'yes'
+        working-directory: terraform/iam-users
+        run: |
+          set -e
 
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add sent_emails.json
+
+          if git diff --cached --quiet; then
+            echo "No new emails sent. Nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "chore: record sent SES emails"
+          git push
