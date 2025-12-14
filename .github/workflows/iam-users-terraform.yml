@@ -184,6 +184,7 @@ jobs:
 
           email_sent=true
           echo "email_sent=true" >> "$GITHUB_OUTPUT"
+          echo "emails_json=$emails_json" >> "$GITHUB_OUTPUT"
 
           done
       - name: Commit sent email log
@@ -193,6 +194,7 @@ jobs:
           email_sent_ses: ${{ steps.email_sent_id.outputs.email_sent }}
         run: |
           set -euo pipefail
+          echo "Emailis true or flase:$email_sent_ses"
 
           # ------------------------------------------------------------
           # 1) Identify this commit as coming from GitHub Actions
