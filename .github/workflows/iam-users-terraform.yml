@@ -127,8 +127,6 @@ jobs:
       - name: Commit sent email log
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.send_emails == 'true'
         working-directory: terraform/iam-users
-        permissions:
-          contents: write
         run: |
           set -e
 
