@@ -55,7 +55,30 @@ jobs:
         working-directory: terraform/iam-users
         run: terraform apply -auto-approve tfplan
 
-      # Get user_emails output AFTER apply
+      - name: Detect if plan creates any users
+        id: plan_guard
+        working-directory: terraform/iam-users
+        run: |
+          set -euo pipefail
+
+          terraform show -json tfplan > tfplan.json
+
+          # True if any resource change includes a "create" action
+          has_user_creates=$(jq -r '
+            [
+              .resource_changes[]?
+              | select(.type == "aws_iam_user")
+              | select(.change.actions | index("create"))
+            ]
+            | length > 0
+          ' tfplan.json)
+
+
+          echo "has_creates=$has_creates" >> "$GITHUB_OUTPUT"
+          echo "Plan has creates? $has_creates"
+
+            # Get user_emails output AFTER apply
+
       - name: Get user emails from Terraform outputs
         if: github.event_name != 'pull_request'
         id: tf_outputs
@@ -67,7 +90,7 @@ jobs:
 
         # Send an email via SES to each user
       - name: Send SES emails to users
-        if: github.event_name != 'pull_request' || github.event.inputs.send_emails == 'true'
+        if: github.event_name != 'pull_request' || steps.plan_guard.outputs.has_creates == 'true'
         working-directory: terraform/iam-users
         env:
           SES_FROM_ADDRESS: "info@cloudnestadvisory.com"
@@ -125,7 +148,7 @@ jobs:
           echo "$sent" > "$SENT_FILE"
           done
       - name: Commit sent email log
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.send_emails == 'true'
+        if: github.event_name == 'workflow_dispatch' && steps.plan_guard.outputs.has_creates == 'true'
         working-directory: terraform/iam-users
         run: |
           set -e
