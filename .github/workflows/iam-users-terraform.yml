@@ -72,9 +72,9 @@ jobs:
           SES_FROM_ADDRESS: "info@cloudnestadvisory.com"  # change this
         run: |
           echo "$emails_json" | jq -r 'to_entries[] | "\(.key) \(.value)"' | while read username email; do
-            echo "Sending email to $email for user $username"
+          echo "Sending email to $email for user $username"
 
-            cat > ses-message.json <<EOF
+          cat > ses-message.json <<EOF
           {
             "Subject": { "Data": "Your IAM access has been configured" },
             "Body": {
@@ -84,8 +84,9 @@ jobs:
             }
           }
           EOF
+          cat ses-message.json
 
-            aws ses send-email \
+          aws ses send-email \
               --region "$AWS_REGION" \
               --from "$SES_FROM_ADDRESS" \
               --destination "ToAddresses=$email" \
