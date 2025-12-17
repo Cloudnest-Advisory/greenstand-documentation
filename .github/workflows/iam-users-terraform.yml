@@ -55,29 +55,31 @@ jobs:
         working-directory: terraform/iam-users
         run: terraform apply -auto-approve tfplan
 
-      - name: Detect if plan creates any users
+      - name: Detect Terraform creates/deletes
         id: plan_guard
         working-directory: terraform/iam-users
+        shell: bash
         run: |
           set -euo pipefail
 
+          # Assumes you already ran: terraform plan -out=tfplan
           terraform show -json tfplan > tfplan.json
 
-          # True if any resource change includes a "create" action
-          has_user_creates=$(jq -r '
-            [
-              .resource_changes[]?
-              | select(.type == "aws_iam_user")
-              | select(.change.actions | index("create"))
-            ]
-            | length > 0
+          # Look for resource change actions
+          has_creates=$(jq -r '
+            any(.resource_changes[]?; (.change.actions | index("create")) != null)
           ' tfplan.json)
 
+          has_deletes=$(jq -r '
+            any(.resource_changes[]?; (.change.actions | index("delete")) != null)
+          ' tfplan.json)
 
-          echo "has_user_creates=$has_user_creates" >> "$GITHUB_OUTPUT"
-          echo "Plan has creates? $has_user_creates"
+          echo "has_creates=$has_creates"
+          echo "has_deletes=$has_deletes"
 
-            # Get user_emails output AFTER apply
+          # Expose as GitHub Actions step outputs
+          echo "has_creates=$has_creates" >> "$GITHUB_OUTPUT"
+          echo "has_deletes=$has_deletes" >> "$GITHUB_OUTPUT"
 
       - name: Get user emails from Terraform outputs
         if: github.event_name != 'pull_request'
@@ -90,7 +92,7 @@ jobs:
 
         # Send an email via SES to each user
       - name: Send SES emails to users
-        if: github.event_name != 'pull_request' || steps.plan_guard.outputs.has_user_creates == 'true'
+        if: github.event_name != 'pull_request' && steps.plan_guard.outputs.has_creates == 'true'
         id: email_sent_id
         working-directory: terraform/iam-users
         env:
@@ -186,6 +188,63 @@ jobs:
 
           email_sent=true
           echo "email_sent=true" >> "$GITHUB_OUTPUT"
+
+      - name: Cleanup sent email log for deleted users
+        if: github.event_name != 'pull_request' && steps.plan_guard.outputs.has_deletes == 'true'
+        id: cleanup_sent_log
+        working-directory: terraform/iam-users
+        env:
+          SES_FROM_ADDRESS: "info@cloudnestadvisory.com"
+          EMAILS_JSON: ${{ steps.tf_outputs.outputs.emails_json }}
+          email_sent: false
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SENT_FILE="sent_emails.json"
+
+          # Ensure log exists
+          if [ ! -f "$SENT_FILE" ]; then
+            echo "{}" > "$SENT_FILE"
+          fi
+
+          # Ensure we have plan JSON available
+          terraform show -json tfplan > tfplan.json
+
+          echo "Current sent email log:"
+          cat "$SENT_FILE" | jq .
+
+          # Pull usernames being deleted from the plan (IAM users)
+          deleted_users=$(jq -r '
+            [.resource_changes[]?
+              | select(.type=="aws_iam_user")
+              | select(.change.actions | index("delete"))
+              | .change.before.name
+            ] | unique | .[]
+          ' tfplan.json || true)
+
+          if [ -z "${deleted_users:-}" ]; then
+            echo "No deleted IAM users found in plan. Nothing to clean."
+            exit 0
+          fi
+
+          echo "Usernames to remove from sent log:"
+          echo "$deleted_users"
+
+          # Load current sent log into memory once, delete keys, write once
+          sent=$(cat "$SENT_FILE")
+
+          while IFS= read -r username; do
+            [ -z "$username" ] && continue
+            echo "Removing $username from $SENT_FILE (if present)..."
+            sent=$(echo "$sent" | jq --arg u "$username" 'del(.[$u])')
+          done <<< "$deleted_users"
+
+          echo "$sent" > "$SENT_FILE"
+
+          echo "Updated sent email log (file):"
+          cat "$SENT_FILE" | jq .
+ 
       - name: Commit sent email log
         #if: steps.email_sent_id.outputs.email_sent == 'true'
         working-directory: terraform/iam-users
